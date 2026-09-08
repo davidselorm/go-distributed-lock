@@ -1,12 +1,26 @@
-package lock
+package distlock
 
-import "sync/atomic"
+import (
+	"sync/atomic"
+)
 
-var globalFence int64
+type FencedStorage struct {
+	lastToken atomic.Uint64
+	store     map[string][]byte
+}
 
-func (l *DistLock) AcquireWithFence() int64 {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.FencingToken = atomic.AddInt64(&globalFence, 1)
-	return l.FencingToken
+func NewFencedStorage() *FencedStorage {
+	return &FencedStorage{
+		store: make(map[string][]byte),
+	}
+}
+
+func (fs *FencedStorage) Put(fenceToken uint64, key string, val []byte) error {
+	prev := fs.lastToken.Load()
+	if fenceToken < prev {
+		return ErrInvalidFence
+	}
+	fs.lastToken.Store(fenceToken)
+	fs.store[key] = val
+	return nil
 }
